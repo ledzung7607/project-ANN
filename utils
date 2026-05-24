@@ -1,0 +1,34 @@
+import cv2
+import numpy as np
+from PIL import Image
+
+LETTER_MAP = {i: chr(ord('A') + i) for i in range(26)}
+
+def ensure_gray_from_pil(pil_img):
+    return np.array(pil_img.convert("L"))
+
+def resize_and_center(img_gray, target=28, pad=6):
+    h, w = img_gray.shape
+    if h == 0 or w == 0:
+        return np.zeros((target, target), dtype=np.uint8)
+    scale = (target - pad) / max(h, w)
+    new_w, new_h = int(w * scale), int(h * scale)
+    resized = cv2.resize(img_gray, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    canvas = np.zeros((target, target), dtype=np.uint8)
+    x = (target - new_w) // 2
+    y = (target - new_h) // 2
+    canvas[y:y+new_h, x:x+new_w] = resized
+    return canvas
+
+def preprocess_for_ann(img_gray, invert=None, apply_thresh=True, thresh_val=180, normalize=True):
+    proc = img_gray.copy()
+    if invert is None:
+        invert = img_gray.mean() < 127
+    if invert:
+        proc = 255 - proc
+    if apply_thresh:
+        _, proc = cv2.threshold(proc, thresh_val, 255, cv2.THRESH_BINARY)
+    proc = resize_and_center(proc)
+    if normalize:
+        proc = proc.astype('float32') / 255.0
+    return proc.reshape(1, 28, 28, 1)
