@@ -1,0 +1,51 @@
+import os
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+# Thư mục lưu dữ liệu
+BASE_DIR = "samples"
+os.makedirs(BASE_DIR, exist_ok=True)
+
+# Có thể thêm nhiều font để dữ liệu đa dạng hơn
+FONT_PATHS = [None]  # ví dụ: ["arial.ttf", "times.ttf", "courier.ttf"]
+
+# Số lượng ảnh mỗi chữ cái muốn tạo
+NUM_IMAGES = 1000   # tạo 1000 ảnh cho mỗi chữ cái
+
+# Kích thước ảnh
+IMG_SIZE = (28, 28)
+
+for letter in [chr(ord('A') + i) for i in range(26)]:
+    out_dir = os.path.join(BASE_DIR, letter)
+    os.makedirs(out_dir, exist_ok=True)
+
+    for idx in range(NUM_IMAGES):
+        img = Image.new("L", IMG_SIZE, color=255)  # nền trắng
+        draw = ImageDraw.Draw(img)
+
+        # Chọn font ngẫu nhiên
+        font_path = np.random.choice(FONT_PATHS)
+        font = ImageFont.truetype(font_path, size=20) if font_path else ImageFont.load_default()
+
+        # ✅ Sử dụng textbbox thay cho textsize
+        bbox = draw.textbbox((0, 0), letter, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        # Căn giữa chữ
+        x = (IMG_SIZE[0] - w) // 2
+        y = (IMG_SIZE[1] - h) // 2
+        draw.text((x, y), letter, fill=0, font=font)
+
+        # Xoay nhẹ để mô phỏng chữ viết tay
+        angle = np.random.randint(-15, 15)
+        img = img.rotate(angle, fillcolor=255)
+
+        # Thêm nhiễu nhẹ
+        noise = np.random.randint(0, 30, IMG_SIZE, dtype=np.uint8)
+        img = Image.fromarray(np.clip(np.array(img) + noise, 0, 255).astype(np.uint8))
+
+        # Lưu file
+        fname = os.path.join(out_dir, f"{letter}_{idx}.png")
+        img.save(fname)
+
+    print(f"Generated {NUM_IMAGES} images for {letter}")
