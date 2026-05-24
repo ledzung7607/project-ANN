@@ -1,0 +1,73 @@
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import os
+
+# --- 1. Load dataset ---
+DATA_DIR = "samples"
+IMG_SIZE = (28, 28)
+BATCH_SIZE = 64
+
+# ✅ Data augmentation để mô phỏng chữ viết tay
+datagen = ImageDataGenerator(
+    rescale=1./255,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    zoom_range=0.2,
+    shear_range=0.2,
+    validation_split=0.2
+)
+
+train_gen = datagen.flow_from_directory(
+    DATA_DIR, target_size=IMG_SIZE, color_mode="grayscale",
+    class_mode="categorical", batch_size=BATCH_SIZE, subset="training"
+)
+
+val_gen = datagen.flow_from_directory(
+    DATA_DIR, target_size=IMG_SIZE, color_mode="grayscale",
+    class_mode="categorical", batch_size=BATCH_SIZE, subset="validation"
+)
+
+# --- 2. Define ANN model (mạnh hơn) ---
+model = models.Sequential([
+    layers.Flatten(input_shape=(28,28,1)),
+    layers.Dense(1024, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.4),
+    layers.Dense(512, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.3),
+    layers.Dense(256, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.3),
+    layers.Dense(128, activation='relu'),
+    layers.Dense(26, activation='softmax')
+])
+
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
+
+# --- 3. Callbacks ---
+callbacks = [
+    ModelCheckpoint("models/genkey_ann_best.h5", save_best_only=True, monitor='val_accuracy', mode='max'),
+    EarlyStopping(patience=10, restore_best_weights=True),
+    ReduceLROnPlateau(patience=5, factor=0.5)
+]
+
+# --- 4. Train ---
+EPOCHS = 50
+history = model.fit(train_gen, epochs=EPOCHS, validation_data=val_gen, callbacks=callbacks)
+
+# --- 5. Evaluate ---
+val_loss, val_acc = model.evaluate(val_gen)
+print(f"Validation accuracy: {val_acc:.4f}")
+
+# --- 6. Save final model ---
+os.makedirs("models", exist_ok=True)
+model.save("models/genkey_ann_final.h5")
+print("Model saved to models/genkey_ann_final.h5")
