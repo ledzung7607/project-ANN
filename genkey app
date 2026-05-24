@@ -1,0 +1,105 @@
+import streamlit as st
+from PIL import Image
+import numpy as np
+import os
+from utils import preprocess_for_ann, ensure_gray_from_pil, LETTER_MAP
+
+st.set_page_config(page_title="GenKey", page_icon="🔑", layout="wide")
+st.title("GenKey — Handwritten Letter Recognizer")
+
+# Sidebar
+model_path = st.sidebar.text_input("Model path", "models/genkey_ann_best.h5")
+load_btn = st.sidebar.button("Load model")
+demo_mode = st.sidebar.checkbox("Demo mode", value=False)
+confidence_threshold = st.sidebar.slider("Confidence threshold", 0.0, 1.0, 0.5, 0.01)
+
+if "model" not in st.session_state:
+    st.session_state.model = None
+    st.session_state.model_loaded = False
+    st.session_state.history = []
+
+def safe_load_model(path):
+    try:
+        from tensorflow.keras.models import load_model
+        return load_model(path), None
+    except Exception as e:
+        return None, str(e)
+
+if load_btn:
+    if demo_mode:
+        st.sidebar.info("Demo mode active.")
+    else:
+        model, err = safe_load_model(model_path)
+        if model:
+            st.session_state.model = model
+            st.session_state.model_loaded = True
+            st.sidebar.success("Model loaded.")
+        else:
+            st.sidebar.error(f"Load failed: {err}")
+
+col1, col2 = st.columns([1, 1.2])
+
+with col1:
+    st.subheader("Input")
+    input_mode = st.radio("Input method", ("Draw", "Upload image"))
+    preview_img = None
+
+    if input_mode == "Draw":
+        from streamlit_drawable_canvas import st_canvas
+        canvas_result = st_canvas(
+            stroke_width=12, stroke_color="#000000",
+            background_color="#FFFFFF", height=280, width=280,
+            drawing_mode="freedraw", key="canvas"
+        )
+        if canvas_result.image_data is not None:
+            preview_img = Image.fromarray(canvas_result.image_data.astype('uint8')).convert("RGB")
+            st.image(preview_img, caption="Canvas preview", width=200)
+    else:
+        uploaded_file = st.file_uploader("Upload an image", type=["png","jpg","jpeg"])
+        if uploaded_file:
+            preview_img = Image.open(uploaded_file).convert("RGB")
+            st.image(preview_img, caption="Uploaded image", width=200)
+
+    if st.button("Predict"):
+        if preview_img is None:
+            st.warning("No input image.")
+        else:
+            gray = ensure_gray_from_pil(preview_img)
+            x = preprocess_for_ann(gray)
+            if st.session_state.model_loaded and st.session_state.model is not None:
+                preds = st.session_state.model.predict(x)[0]
+            elif demo_mode:
+                preds = np.zeros(26); preds[4] = 1.0
+            else:
+                st.error("Model not loaded."); preds = None
+
+            if preds is not None:
+                idx = int(np.argmax(preds))
+                conf = float(preds[idx])
+                letter = LETTER_MAP[idx]
+                st.session_state.history.insert(0, {"letter": letter, "conf": conf, "preds": preds.tolist()})
+                st.session_state.history = st.session_state.history[:50]
+                st.session_state.last_result = {
+                    "letter": letter, "conf": conf,
+                    "preds": preds.tolist(), "input_x": x
+                }
+
+with col2:
+    st.subheader("Result")
+    if "last_result" in st.session_state and st.session_state.last_result:
+        res = st.session_state.last_result
+        st.markdown(f"**Prediction:** {res['letter']}")
+        st.markdown(f"**Confidence:** {res['conf']:.3f}")
+        if res['conf'] < confidence_threshold:
+            st.warning("Low confidence — try again.")
+        probs = np.array(res['preds'])
+        labels = [LETTER_MAP[i] for i in range(26)]
+        top_idx = probs.argsort()[-3:][::-1]
+        st.markdown("**Top 3 predictions**")
+        for i in top_idx:
+            st.write(f"{LETTER_MAP[i]} — {probs[i]:.4f}")
+        st.bar_chart(probs)
+        img28 = (res["input_x"].reshape(28,28) * 255).astype('uint8')
+        st.image(img28, caption="Model input 28×28", width=140)
+    else:
+        st.info("Draw or upload a letter")
